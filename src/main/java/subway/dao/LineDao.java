@@ -1,61 +1,67 @@
 package subway.dao;
 
+import java.util.List;
+import java.util.Optional;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.BeanPropertySqlParameterSource;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
 import org.springframework.jdbc.core.simple.SimpleJdbcInsert;
 import org.springframework.stereotype.Repository;
-import subway.domain.Line;
-
-import javax.sql.DataSource;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import subway.entity.LineEntity;
 
 @Repository
 public class LineDao {
+
+    private static final RowMapper<LineEntity> ROW_MAPPER = (rs, rowNum) -> new LineEntity(
+            rs.getLong("id"),
+            rs.getString("name"),
+            rs.getString("color"),
+            rs.getInt("fare")
+    );
+
     private final JdbcTemplate jdbcTemplate;
-    private final SimpleJdbcInsert insertAction;
+    private final SimpleJdbcInsert jdbcInsert;
 
-    private RowMapper<Line> rowMapper = (rs, rowNum) ->
-            new Line(
-                    rs.getLong("id"),
-                    rs.getString("name"),
-                    rs.getString("color")
-            );
-
-    public LineDao(JdbcTemplate jdbcTemplate, DataSource dataSource) {
+    public LineDao(final JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-        this.insertAction = new SimpleJdbcInsert(dataSource)
+        this.jdbcInsert = new SimpleJdbcInsert(jdbcTemplate)
                 .withTableName("line")
+                .usingColumns("name", "color", "fare")
                 .usingGeneratedKeyColumns("id");
     }
 
-    public Line insert(Line line) {
-        Map<String, Object> params = new HashMap<>();
-        params.put("id", line.getId());
-        params.put("name", line.getName());
-        params.put("color", line.getColor());
-
-        Long lineId = insertAction.executeAndReturnKey(params).longValue();
-        return new Line(lineId, line.getName(), line.getColor());
+    public LineEntity save(final LineEntity lineEntity) {
+        final SqlParameterSource parameterSource = new BeanPropertySqlParameterSource(lineEntity);
+        final Long lineId = jdbcInsert.executeAndReturnKey(parameterSource).longValue();
+        return new LineEntity(lineId, lineEntity.getName(), lineEntity.getColor(), lineEntity.getFare());
     }
 
-    public List<Line> findAll() {
-        String sql = "select id, name, color from LINE";
-        return jdbcTemplate.query(sql, rowMapper);
+    public Optional<LineEntity> findById(final Long lineId) {
+        final String sql = "SELECT id, name, color, fare FROM line WHERE id = ?";
+        try {
+            final LineEntity result = jdbcTemplate.queryForObject(
+                    sql,
+                    ROW_MAPPER,
+                    lineId
+            );
+            return Optional.ofNullable(result);
+        } catch (EmptyResultDataAccessException exception) {
+            return Optional.empty();
+        }
     }
 
-    public Line findById(Long id) {
-        String sql = "select id, name, color from LINE WHERE id = ?";
-        return jdbcTemplate.queryForObject(sql, rowMapper, id);
+    public List<LineEntity> findAll() {
+        final String sql = "SELECT id, name, color, fare FROM line";
+        return jdbcTemplate.query(sql, ROW_MAPPER);
     }
 
-    public void update(Line newLine) {
-        String sql = "update LINE set name = ?, color = ? where id = ?";
-        jdbcTemplate.update(sql, new Object[]{newLine.getName(), newLine.getColor(), newLine.getId()});
-    }
-
-    public void deleteById(Long id) {
-        jdbcTemplate.update("delete from Line where id = ?", id);
+    public int update(final LineEntity lineEntity) {
+        final String sql = "UPDATE line SET name = ?, color = ?, fare = ? WHERE id = ?";
+        return jdbcTemplate.update(
+                sql,
+                lineEntity.getName(), lineEntity.getColor(), lineEntity.getFare(), lineEntity.getId()
+        );
     }
 }
